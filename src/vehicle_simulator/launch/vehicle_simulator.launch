@@ -114,9 +114,34 @@ def generate_launch_description():
       output='screen'
   )
 
+  delayed_spawn_lidar = TimerAction(
+    period=3.0,
+    actions=[spawn_lidar]
+  )
+
+  delayed_spawn_robot = TimerAction(
+    period=3.5,
+    actions=[spawn_robot]
+  )
+
+  delayed_spawn_camera = TimerAction(
+    period=4.0,
+    actions=[spawn_camera]
+  )
+
+  world = LaunchConfiguration('world')
+  
   start_gazebo = IncludeLaunchDescription(
     PythonLaunchDescriptionSource(os.path.join(
-      get_package_share_directory('gazebo_ros'), 'launch', 'gazebo.launch.py'))
+      get_package_share_directory('gazebo_ros'), 'launch', 'gazebo.launch.py')),
+    launch_arguments={
+      'world': world,
+      'gui': gui,
+      'use_sim_time': use_sim_time,
+      'pause': pause,
+      'verbose': verbose,
+      'record': record
+    }.items()
   )
 
   start_vehicle_simulator = Node(
@@ -193,9 +218,9 @@ def generate_launch_description():
 
   ld.add_action(start_gazebo)
   ld.add_action(start_lidar_state_publisher)
-  ld.add_action(spawn_lidar)
-  ld.add_action(spawn_robot)
-  ld.add_action(spawn_camera)
+  ld.add_action(delayed_spawn_lidar)
+  ld.add_action(delayed_spawn_robot)
+  ld.add_action(delayed_spawn_camera)
   ld.add_action(delayed_start_vehicle_simulator)
 
   return ld
