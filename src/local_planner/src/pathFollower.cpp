@@ -101,6 +101,10 @@ double switchTime = 0;
 
 nav_msgs::msg::Path path;
 rclcpp::Node::SharedPtr nh;
+bool omniMode = false;           // 是否启用全向模式
+double lateralGain = 1.0;        // 横向速度增益
+double maxLateralSpeed = 1.0;    // 最大横向速度
+float vehicleLateralSpeed = 0;   // 横向速度
 
 void odomHandler(const nav_msgs::msg::Odometry::ConstSharedPtr odomIn)
 {
@@ -247,6 +251,14 @@ int main(int argc, char** argv)
   nh->get_parameter("autonomySpeed", autonomySpeed);
   nh->get_parameter("joyToSpeedDelay", joyToSpeedDelay);
 
+  nh->declare_parameter<bool>("omniMode", omniMode);
+  nh->declare_parameter<double>("lateralGain", lateralGain);
+  nh->declare_parameter<double>("maxLateralSpeed", maxLateralSpeed);
+
+  nh->get_parameter("omniMode", omniMode);
+  nh->get_parameter("lateralGain", lateralGain);
+  nh->get_parameter("maxLateralSpeed", maxLateralSpeed);
+
   auto subOdom = nh->create_subscription<nav_msgs::msg::Odometry>("/state_estimation", 5, odomHandler);
 
   auto subPath = nh->create_subscription<nav_msgs::msg::Path>("/path", 5, pathHandler);
@@ -300,6 +312,61 @@ int main(int argc, char** argv)
       disX = path.poses[pathPointID].pose.position.x - vehicleXRel;
       disY = path.poses[pathPointID].pose.position.y - vehicleYRel;
       dis = sqrt(disX * disX + disY * disY);
+      float joySpeed2 = maxSpeed * joySpeed;
+      if (omniMode) {
+        // ===== OMNI模式控制逻辑 =====
+        // 将目标点转换到车体坐标系
+        float targetX_body = cos(vehicleYaw) * disX + sin(vehicleYaw) * disY;
+        float targetY_body = -sin(vehicleYaw) * disX + cos(vehicleYaw) * disY;
+
+        // 归一化方向向量
+        float norm = sqrt(targetX_body * targetX_body + targetY_body * targetY_body);
+        if (norm > 0.01) {  // 避免除零
+            targetX_body /= norm;
+            targetY_body /= norm;
+        }
+
+        // 计算期望速度
+        float desiredForwardSpeed = joySpeed2;
+        float desiredLateralSpeed = 0;
+
+        // 根据路径方向分配速度分量
+        if (dis > stopDisThre) {
+            desiredForwardSpeed = targetX_body * joySpeed2;
+            desiredLateralSpeed = targetY_body * joySpeed2 * lateralGain;
+
+            if (desiredLateralSpeed > maxLateralSpeed) {
+                desiredLateralSpeed = maxLateralSpeed;
+            } else if (desiredLateralSpeed < -maxLateralSpeed) {
+                desiredLateralSpeed = -maxLateralSpeed;
+            }
+        } else {
+            desiredForwardSpeed = 0;
+            desiredLateralSpeed = 0;
+        }
+
+        // 平滑加减速
+        if (vehicleSpeed < desiredForwardSpeed) {
+            vehicleSpeed += maxAccel / 100.0;
+        } else if (vehicleSpeed > desiredForwardSpeed) {
+            vehicleSpeed -= maxAccel / 100.0;
+        }
+
+        if (vehicleLateralSpeed < desiredLateralSpeed) {
+            vehicleLateralSpeed += maxAccel / 100.0;
+        } else if (vehicleLateralSpeed > desiredLateralSpeed) {
+            vehicleLateralSpeed -= maxAccel / 100.0;
+        }
+
+        // 到达目标点时停止
+        if (dis < stopDisThre || pathSize <= 1) {
+            vehicleSpeed = 0;
+            vehicleLateralSpeed = 0;
+            if (noRotAtGoal) vehicleYawRate = 0;
+        }
+
+    }else
+    {
       float pathDir = atan2(disY, disX);
 
       float dirDiff = vehicleYaw - vehicleYawRec - pathDir;
@@ -319,7 +386,7 @@ int main(int argc, char** argv)
         }
       }
 
-      float joySpeed2 = maxSpeed * joySpeed;
+
       if (!navFwd) {
         dirDiff += PI;
         if (dirDiff > PI) dirDiff -= 2 * PI;
@@ -355,7 +422,7 @@ int main(int argc, char** argv)
         if (vehicleSpeed > 0) vehicleSpeed -= maxAccel / 100.0;
         else if (vehicleSpeed < 0) vehicleSpeed += maxAccel / 100.0;
       }
-
+    }
       if (odomTime < stopInitTime + stopTime && stopInitTime > 0) {
         vehicleSpeed = 0;
         vehicleYawRate = 0;
@@ -367,9 +434,17 @@ int main(int argc, char** argv)
       pubSkipCount--;
       if (pubSkipCount < 0) {
         cmd_vel.header.stamp = rclcpp::Time(static_cast<uint64_t>(odomTime * 1e9));
-        if (fabs(vehicleSpeed) <= maxAccel / 100.0) cmd_vel.twist.linear.x = 0;
-        else cmd_vel.twist.linear.x = vehicleSpeed;
-        cmd_vel.twist.angular.z = vehicleYawRate;
+        if (omniMode)
+        {
+          cmd_vel.twist.linear.x = vehicleSpeed;
+          cmd_vel.twist.linear.y = vehicleLateralSpeed;
+          cmd_vel.twist.angular.z = vehicleYawRate;
+        }else
+        {
+          if (fabs(vehicleSpeed) <= maxAccel / 100.0) cmd_vel.twist.linear.x = 0;
+          else cmd_vel.twist.linear.x = vehicleSpeed;
+          cmd_vel.twist.angular.z = vehicleYawRate;
+        }
         pubSpeed->publish(cmd_vel);
 
         pubSkipCount = pubSkipNum;
