@@ -3,7 +3,7 @@
   <arg name="sensorOffsetX" default="0.0"/>
   <arg name="sensorOffsetY" default="0.0"/>
   <arg name="cameraOffsetZ" default="0.0"/>
-  <arg name="twoWayDrive" default="true"/>
+  <arg name="twoWayDrive" default="false"/>
   <arg name="maxSpeed" default="2.0"/>
   <arg name="autonomyMode" default="true"/>
   <arg name="autonomySpeed" default="2.0"/>
@@ -51,6 +51,7 @@
     <param name="goalClearRange" value="0.5" />
     <param name="goalX" value="$(var goalX)" />
     <param name="goalY" value="$(var goalY)" />
+    <param name="OdomTopic" value="/odometry" />
   </node>
 
   <node pkg="local_planner" exec="pathFollower" name="pathFollower" output="screen">
