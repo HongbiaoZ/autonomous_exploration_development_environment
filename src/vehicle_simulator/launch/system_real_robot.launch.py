@@ -45,17 +45,91 @@ def generate_launch_description():
   )
 
   start_sensor_scan_generation = IncludeLaunchDescription(
-    FrontendLaunchDescriptionSource(os.path.join(
-      get_package_share_directory('sensor_scan_generation'), 'launch', 'sensor_scan_generation.launch')
+    PythonLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('sensor_scan_generation'), 'launch', 'sensor_scan_generation.launch.py')
     )
   )
 
   start_loam_interface = IncludeLaunchDescription(
-    FrontendLaunchDescriptionSource(os.path.join(
-      get_package_share_directory('loam_interface'), 'launch', 'loam_interface.launch')
+    PythonLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('loam_interface'), 'launch', 'loam_interface_launch.py')
     )
   )
 
+  start_fast_lio = IncludeLaunchDescription(
+    PythonLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('fast_lio'),'launch','mapping.launch.py')
+    )
+  )
+
+  static_tf = Node(
+    package="tf2_ros",
+    executable="static_transform_publisher",
+    arguments=[
+      "--x",
+      "0.0",
+      "--y",
+      "0.0",
+      "--z",
+      "0.2",
+      "--roll",
+      "0.0",
+      "--pitch",
+      "0.0",
+      "--yaw",
+      "0.0",
+      "--frame-id",
+      "base_link",
+      "--child-frame-id",
+      "front_mid360",
+    ],
+  )
+
+  map_static_tf = Node(
+    package="tf2_ros",
+    executable="static_transform_publisher",
+    arguments=[
+      "--x",
+      "0.0",
+      "--y",
+      "0.0",
+      "--z",
+      "0.2",
+      "--roll",
+      "0.0",
+      "--pitch",
+      "0.0",
+      "--yaw",
+      "0.0",
+      "--frame-id",
+      "map",
+      "--child-frame-id",
+      "odom",
+    ],
+  )
+
+  vehicle_static_tf = Node(
+    package="tf2_ros",
+    executable="static_transform_publisher",
+    arguments=[
+      "--x",
+      "0.0",
+      "--y",
+      "0.0",
+      "--z",
+      "0.2",
+      "--roll",
+      "0.0",
+      "--pitch",
+      "0.0",
+      "--yaw",
+      "0.0",
+      "--frame-id",
+      "base_link",
+      "--child-frame-id",
+      "vehicle",
+    ],
+  )
   start_joy = Node(
     package='joy', 
     executable='joy_node',
@@ -96,7 +170,10 @@ def generate_launch_description():
   ld.add_action(start_terrain_analysis_ext)
   ld.add_action(start_sensor_scan_generation)
   ld.add_action(start_loam_interface)
+  ld.add_action(start_fast_lio)
   ld.add_action(start_joy)
   ld.add_action(delayed_start_rviz)
-
+  ld.add_action(static_tf)
+  ld.add_action(map_static_tf)
+  ld.add_action(vehicle_static_tf)
   return ld

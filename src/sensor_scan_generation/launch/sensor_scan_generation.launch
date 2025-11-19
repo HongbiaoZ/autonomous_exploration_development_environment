@@ -1,5 +1,0 @@
-<launch>
-
-  <node pkg="sensor_scan_generation" exec="sensorScanGeneration" name="sensorScanGeneration" output="screen"/>
-
-</launch>
