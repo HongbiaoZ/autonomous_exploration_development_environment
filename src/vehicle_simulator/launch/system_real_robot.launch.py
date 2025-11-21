@@ -117,7 +117,7 @@ def generate_launch_description():
       "--y",
       "0.0",
       "--z",
-      "0.2",
+      "0.0",
       "--roll",
       "0.0",
       "--pitch",
@@ -151,7 +151,7 @@ def generate_launch_description():
   )
 
   delayed_start_rviz = TimerAction(
-    period=8.0,
+    period=2.0,
     actions=[
       start_rviz
     ]
