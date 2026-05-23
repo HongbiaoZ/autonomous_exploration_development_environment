@@ -8,7 +8,6 @@
 #include "nav_msgs/msg/odometry.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
 
-#include "tf2/transform_datatypes.h"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
@@ -16,9 +15,9 @@
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
 
-#include "message_filters/subscriber.h"
-#include "message_filters/synchronizer.h"
-#include "message_filters/sync_policies/approximate_time.h"
+#include "message_filters/subscriber.hpp"
+#include "message_filters/synchronizer.hpp"
+#include "message_filters/sync_policies/approximate_time.hpp"
 #include "rmw/types.h"
 #include "rmw/qos_profiles.h"
 
@@ -111,22 +110,8 @@ int main(int argc, char** argv)
   typedef message_filters::Synchronizer<syncPolicy> Sync;
   std::shared_ptr<Sync> sync_;
   
-  // Define qos_profile as the pre-defined rmw_qos_profile_sensor_data, but with depth equal to 1.
-  rmw_qos_profile_t qos_profile=
-  {
-    RMW_QOS_POLICY_HISTORY_KEEP_LAST,
-    1,
-    RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT,
-    RMW_QOS_POLICY_DURABILITY_VOLATILE,
-    RMW_QOS_DEADLINE_DEFAULT,
-    RMW_QOS_LIFESPAN_DEFAULT,
-    RMW_QOS_POLICY_LIVELINESS_SYSTEM_DEFAULT,
-    RMW_QOS_LIVELINESS_LEASE_DURATION_DEFAULT,
-    false
-  };
-
-  subOdometry.subscribe(nh, "/state_estimation", qos_profile);
-  subLaserCloud.subscribe(nh, "/registered_scan", qos_profile);
+  subOdometry.subscribe(nh, "/state_estimation", 5);
+  subLaserCloud.subscribe(nh, "/registered_scan", 5);
   sync_.reset(new Sync(syncPolicy(100), subOdometry, subLaserCloud));
   sync_->registerCallback(std::bind(laserCloudAndOdometryHandler, placeholders::_1, placeholders::_2));
   pubOdometryPointer = nh->create_publisher<nav_msgs::msg::Odometry>("/state_estimation_at_scan", 5);
