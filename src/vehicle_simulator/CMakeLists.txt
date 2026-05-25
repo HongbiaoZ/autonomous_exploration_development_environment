@@ -29,6 +29,7 @@ find_package(message_filters REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(PCL REQUIRED)
 find_package(pcl_conversions REQUIRED)
+find_package(jsoncpp REQUIRED)
 
 add_executable(vehicleSimulator src/vehicleSimulator.cpp)
 target_link_libraries(vehicleSimulator rclcpp::rclcpp std_msgs::std_msgs sensor_msgs::sensor_msgs nav_msgs::nav_msgs geometry_msgs::geometry_msgs tf2::tf2 tf2_ros::tf2_ros tf2_geometry_msgs::tf2_geometry_msgs message_filters::message_filters pcl_conversions::pcl_conversions)
