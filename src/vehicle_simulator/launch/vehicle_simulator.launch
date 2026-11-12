@@ -5,7 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
-from launch.substitutions import Command, LaunchConfiguration
+from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
 
 def declare_world_action(context, world_name):
   world_name_str = str(world_name.perform(context))
@@ -40,6 +40,8 @@ def generate_launch_description():
   record = LaunchConfiguration('record')
   verbose = LaunchConfiguration('verbose')
   world_name = LaunchConfiguration('world_name')
+  useTerrainMap = LaunchConfiguration('useTerrainMap')
+  terrainMapInclRadius = LaunchConfiguration('terrainMapInclRadius')
 
   declare_sensorOffsetX = DeclareLaunchArgument('sensorOffsetX', default_value='0.0', description='')
   declare_sensorOffsetY = DeclareLaunchArgument('sensorOffsetY', default_value='0.0', description='')
@@ -68,6 +70,8 @@ def generate_launch_description():
   declare_record = DeclareLaunchArgument('record', default_value='false', description='')
   declare_verbose = DeclareLaunchArgument('verbose', default_value='false', description='')
   declare_world_name = DeclareLaunchArgument('world_name', default_value='garage', description='')
+  declare_useTerrainMap = DeclareLaunchArgument('useTerrainMap', default_value='true', description='use mesh/<world_name>/heightmap.bin for ground height and tilt when it exists')
+  declare_terrainMapInclRadius = DeclareLaunchArgument('terrainMapInclRadius', default_value='0.75', description='half-span (m) of the terrain-map slope estimate')
   
   lidar_xacro = os.path.join(get_package_share_directory('vehicle_simulator'), 'urdf', 'lidar.urdf.xacro')
   lidar_description = Command(['xacro',' ', lidar_xacro])
@@ -146,6 +150,9 @@ def generate_launch_description():
         'smoothRateIncl': smoothRateIncl,
         'InclFittingThre': InclFittingThre,
         'maxIncl': maxIncl,
+        'useTerrainMap': useTerrainMap,
+        'terrainMapFile': PathJoinSubstitution([os.path.join(get_package_share_directory('vehicle_simulator'), 'mesh'), world_name, 'heightmap.bin']),
+        'terrainMapInclRadius': terrainMapInclRadius,
         'use_sim_time': use_sim_time
       }
       ],
@@ -189,6 +196,8 @@ def generate_launch_description():
   ld.add_action(declare_record)
   ld.add_action(declare_verbose)
   ld.add_action(declare_world_name)
+  ld.add_action(declare_useTerrainMap)
+  ld.add_action(declare_terrainMapInclRadius)
   ld.add_action(OpaqueFunction(function=declare_world_action, args=[world_name]))
 
   ld.add_action(start_gazebo)

@@ -43,6 +43,8 @@
 #include "rmw/types.h"
 #include "rmw/qos_profiles.h"
 
+#include "vehicle_simulator/terrain_map.h"
+
 using namespace std;
 
 const double PI = 3.1415926;
@@ -64,6 +66,15 @@ int minTerrainPointNumIncl = 500;
 double smoothRateIncl = 0.2;
 double InclFittingThre = 0.2;
 double maxIncl = 30.0;
+
+// Ground-truth terrain (heightmap.bin from dem_to_gazebo.py). While the
+// vehicle is on the map, height and tilt come from it instead of from the
+// lidar-derived /terrain_map, which can't follow steep banks.
+bool useTerrainMap = true;
+string terrainMapFile = "";
+double terrainMapInclRadius = 0.75;
+TerrainMap terrainMap;
+bool onTerrainMap = false;
 
 const int systemDelay = 5;
 int systemInitCount = 0;
@@ -186,7 +197,7 @@ void scanHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr scanIn)
 
 void terrainCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr terrainCloud2)
 {
-  if (!adjustZ && !adjustIncl)
+  if ((!adjustZ && !adjustIncl) || onTerrainMap)
   {
     return;
   }
@@ -300,6 +311,26 @@ void terrainCloudHandler(const sensor_msgs::msg::PointCloud2::ConstSharedPtr ter
   }
 }
 
+// Sets terrainZ, terrainRoll and terrainPitch from the ground-truth terrain at
+// the vehicle position. Same conventions as the lidar-based fit above:
+// world-frame angles, pitch = -atan(dz/dx), roll from dz/dy. Returns false
+// (leaving the state unchanged) when the vehicle is off the map.
+bool updateFromTerrainMap(double& slopeDeg)
+{
+  double groundZ, dzdx, dzdy;
+  if (!terrainMap.height(vehicleX, vehicleY, groundZ) ||
+      !terrainMap.slope(vehicleX, vehicleY, terrainMapInclRadius, dzdx, dzdy))
+  {
+    return false;
+  }
+
+  terrainZ = groundZ;
+  terrainPitch = -atan(dzdx);
+  terrainRoll = asin(dzdy / sqrt(1.0 + dzdx * dzdx + dzdy * dzdy));
+  slopeDeg = atan(sqrt(dzdx * dzdx + dzdy * dzdy)) * 180.0 / PI;
+  return true;
+}
+
 void speedHandler(const geometry_msgs::msg::TwistStamped::ConstSharedPtr speedIn)
 {
   vehicleSpeed = speedIn->twist.linear.x;
@@ -331,6 +362,9 @@ int main(int argc, char** argv)
   nh->declare_parameter<int>("minTerrainPointNumIncl", minTerrainPointNumIncl);
   nh->declare_parameter<double>("InclFittingThre", InclFittingThre);
   nh->declare_parameter<double>("maxIncl", maxIncl);
+  nh->declare_parameter<bool>("useTerrainMap", useTerrainMap);
+  nh->declare_parameter<string>("terrainMapFile", terrainMapFile);
+  nh->declare_parameter<double>("terrainMapInclRadius", terrainMapInclRadius);
 
   nh->get_parameter("use_gazebo_time", use_gazebo_time);
   nh->get_parameter("cameraOffsetZ", cameraOffsetZ);
@@ -352,6 +386,29 @@ int main(int argc, char** argv)
   nh->get_parameter("minTerrainPointNumIncl", minTerrainPointNumIncl);
   nh->get_parameter("InclFittingThre", InclFittingThre);
   nh->get_parameter("maxIncl", maxIncl);
+  nh->get_parameter("useTerrainMap", useTerrainMap);
+  nh->get_parameter("terrainMapFile", terrainMapFile);
+  nh->get_parameter("terrainMapInclRadius", terrainMapInclRadius);
+
+  if (useTerrainMap && !terrainMapFile.empty())
+  {
+    string error;
+    if (!ifstream(terrainMapFile).good())
+    {
+      RCLCPP_INFO(nh->get_logger(), "No terrain map at %s; using lidar-based terrain following.",
+                  terrainMapFile.c_str());
+    }
+    else if (terrainMap.load(terrainMapFile, error))
+    {
+      RCLCPP_INFO(nh->get_logger(), "Loaded terrain map %s (%d x %d, %.2f m); using it for ground height and tilt.",
+                  terrainMapFile.c_str(), terrainMap.cols(), terrainMap.rows(), terrainMap.resolution());
+    }
+    else
+    {
+      RCLCPP_WARN(nh->get_logger(), "Failed to load terrain map: %s; using lidar-based terrain following.",
+                  error.c_str());
+    }
+  }
 
   auto subScan = nh->create_subscription<sensor_msgs::msg::PointCloud2>("/velodyne_points", 2, scanHandler);
 
@@ -406,6 +463,24 @@ int main(int argc, char** argv)
                 0.005 * vehicleYawRate * (-sin(vehicleYaw) * sensorOffsetX - cos(vehicleYaw) * sensorOffsetY);
     vehicleY += 0.005 * sin(vehicleYaw) * vehicleSpeed +
                 0.005 * vehicleYawRate * (cos(vehicleYaw) * sensorOffsetX - sin(vehicleYaw) * sensorOffsetY);
+
+    if (terrainMap.loaded())
+    {
+      bool wasOnTerrainMap = onTerrainMap;
+      double slopeDeg = 0;
+      onTerrainMap = updateFromTerrainMap(slopeDeg);
+      if (onTerrainMap != wasOnTerrainMap)
+      {
+        RCLCPP_INFO(nh->get_logger(), "Vehicle %s the terrain map at (%.1f, %.1f); %s terrain following.",
+                    onTerrainMap ? "is on" : "left", vehicleX, vehicleY, onTerrainMap ? "ground-truth" : "lidar-based");
+      }
+      if (onTerrainMap && slopeDeg > maxIncl)
+      {
+        RCLCPP_WARN_THROTTLE(nh->get_logger(), *nh->get_clock(), 2000,
+                             "Ground slope %.0f deg at (%.1f, %.1f) exceeds maxIncl %.0f deg.", slopeDeg, vehicleX,
+                             vehicleY, maxIncl);
+      }
+    }
     vehicleZ = terrainZ + vehicleHeight;
 
     odomTime = nh->now();

@@ -1,0 +1,161 @@
+import os
+
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
+from launch.launch_description_sources import PythonLaunchDescriptionSource, FrontendLaunchDescriptionSource
+from launch_ros.actions import Node
+from launch.substitutions import LaunchConfiguration, PythonExpression
+
+def generate_launch_description():
+  world_name = LaunchConfiguration('world_name')
+  vehicleHeight = LaunchConfiguration('vehicleHeight')
+  cameraOffsetZ = LaunchConfiguration('cameraOffsetZ')
+  vehicleX = LaunchConfiguration('vehicleX')
+  vehicleY = LaunchConfiguration('vehicleY')
+  vehicleZ = LaunchConfiguration('vehicleZ')
+  terrainZ = LaunchConfiguration('terrainZ')
+  vehicleYaw = LaunchConfiguration('vehicleYaw')
+  gazebo_gui = LaunchConfiguration('gazebo_gui')
+  checkTerrainConn = LaunchConfiguration('checkTerrainConn')
+  useTerrainMap = LaunchConfiguration('useTerrainMap')
+  maxIncl = LaunchConfiguration('maxIncl')
+
+  # The nodes declare these as doubles and reject integers, so accept whole
+  # numbers on the command line (vehicleX:=-26) by passing them on as floats.
+  def as_float(value):
+    return PythonExpression(['float(', value, ')'])
+
+  vehicleHeight = as_float(vehicleHeight)
+  cameraOffsetZ = as_float(cameraOffsetZ)
+  vehicleX = as_float(vehicleX)
+  vehicleY = as_float(vehicleY)
+  terrainZ = as_float(terrainZ)
+  vehicleYaw = as_float(vehicleYaw)
+  maxIncl = as_float(maxIncl)
+
+  declare_world_name = DeclareLaunchArgument('world_name', default_value='hanksville', description='')
+  declare_vehicleHeight = DeclareLaunchArgument('vehicleHeight', default_value='0.75', description='')
+  declare_cameraOffsetZ = DeclareLaunchArgument('cameraOffsetZ', default_value='0.0', description='')
+  declare_vehicleX = DeclareLaunchArgument('vehicleX', default_value='0.0', description='')
+  declare_vehicleY = DeclareLaunchArgument('vehicleY', default_value='0.0', description='')
+  declare_vehicleZ = DeclareLaunchArgument('vehicleZ', default_value='0.0', description='')
+  declare_terrainZ = DeclareLaunchArgument('terrainZ', default_value='0.0', description='')
+  declare_vehicleYaw = DeclareLaunchArgument('vehicleYaw', default_value='0.0', description='')
+  declare_gazebo_gui = DeclareLaunchArgument('gazebo_gui', default_value='false', description='')
+  declare_checkTerrainConn = DeclareLaunchArgument('checkTerrainConn', default_value='true', description='')
+  declare_useTerrainMap = DeclareLaunchArgument('useTerrainMap', default_value='true', description='ground-truth terrain following from heightmap.bin')
+  declare_maxIncl = DeclareLaunchArgument('maxIncl', default_value='20.0', description='steepest slope (deg) the rover can traverse')
+  
+  start_local_planner = IncludeLaunchDescription(
+    FrontendLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('local_planner'), 'launch', 'local_planner.launch')
+    ),
+    launch_arguments={
+      'cameraOffsetZ': cameraOffsetZ,
+      'goalX': vehicleX,
+      'goalY': vehicleY,
+    }.items()
+  )
+
+  start_terrain_analysis = IncludeLaunchDescription(
+    FrontendLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('terrain_analysis'), 'launch', 'terrain_analysis.launch')
+    )
+  )
+
+  start_terrain_analysis_ext = IncludeLaunchDescription(
+    FrontendLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('terrain_analysis_ext'), 'launch', 'terrain_analysis_ext.launch')
+    ),
+    launch_arguments={
+      'checkTerrainConn': checkTerrainConn,
+    }.items()
+  )
+
+  start_vehicle_simulator = IncludeLaunchDescription(
+    PythonLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('vehicle_simulator'), 'launch', 'vehicle_simulator.launch')
+    ),
+    launch_arguments={
+      'world_name': world_name,
+      'vehicleHeight': vehicleHeight,
+      'cameraOffsetZ': cameraOffsetZ,
+      'vehicleX': vehicleX,
+      'vehicleY': vehicleY,
+      'terrainZ': terrainZ,
+      'vehicleYaw': vehicleYaw,
+      'gui': gazebo_gui,
+      'useTerrainMap': useTerrainMap,
+      'maxIncl': maxIncl,
+    }.items()
+  )
+
+  start_sensor_scan_generation = IncludeLaunchDescription(
+    FrontendLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('sensor_scan_generation'), 'launch', 'sensor_scan_generation.launch')
+    )
+  )
+
+  start_visualization_tools = IncludeLaunchDescription(
+    FrontendLaunchDescriptionSource(os.path.join(
+      get_package_share_directory('visualization_tools'), 'launch', 'visualization_tools.launch')
+    ),
+    launch_arguments={
+      'world_name': world_name,
+    }.items()
+  )
+
+  start_joy = Node(
+    package='joy', 
+    executable='joy_node',
+    name='ps3_joy',
+    output='screen',
+    parameters=[{
+                'dev': "/dev/input/js0",
+                'deadzone': 0.12,
+                'autorepeat_rate': 0.0,
+  		}]
+  )
+
+  rviz_config_file = os.path.join(get_package_share_directory('vehicle_simulator'), 'rviz', 'vehicle_simulator.rviz')
+  start_rviz = Node(
+    package='rviz2',
+    executable='rviz2',
+    arguments=['-d', rviz_config_file],
+    output='screen'
+  )
+
+  delayed_start_rviz = TimerAction(
+    period=8.0,
+    actions=[
+      start_rviz
+    ]
+  )
+
+  ld = LaunchDescription()
+
+  # Add the actions
+  ld.add_action(declare_world_name)
+  ld.add_action(declare_vehicleHeight)
+  ld.add_action(declare_cameraOffsetZ)
+  ld.add_action(declare_vehicleX)
+  ld.add_action(declare_vehicleY)
+  ld.add_action(declare_vehicleZ)
+  ld.add_action(declare_terrainZ)
+  ld.add_action(declare_vehicleYaw)
+  ld.add_action(declare_gazebo_gui)
+  ld.add_action(declare_checkTerrainConn)
+  ld.add_action(declare_useTerrainMap)
+  ld.add_action(declare_maxIncl)
+
+  ld.add_action(start_local_planner)
+  ld.add_action(start_terrain_analysis)
+  ld.add_action(start_terrain_analysis_ext)
+  ld.add_action(start_vehicle_simulator)
+  ld.add_action(start_sensor_scan_generation)
+  ld.add_action(start_visualization_tools)
+  ld.add_action(start_joy)
+  ld.add_action(delayed_start_rviz)
+
+  return ld
